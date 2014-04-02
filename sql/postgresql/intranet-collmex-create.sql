@@ -22,8 +22,7 @@
 SELECT acs_log__debug('/packages/intranet-collmex/sql/postgresql/intranet-collmex-create.sql','');
 
 alter table im_companies add column collmex_id integer;
-alter table users_contact add column collmex_id integer;
-update im_offices set address_country_code = 'de' where address_country_code is null;
+update im_offices set address_country_code = 'de' where address_country_code is null
 
 CREATE OR REPLACE FUNCTION inline_0 ()
 RETURNS integer AS '
