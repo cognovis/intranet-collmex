@@ -397,3 +397,119 @@ ad_proc -public intranet_collmex::invoice_payment_get {
     }
     return 1
 }
+
+
+ad_proc -public intranet_collmex::update_contact {
+    -user_id
+    -customer:boolean
+} {
+    send the contact / user to collmex for update
+
+    use field description from http://www.collmex.de/cgi-bin/cgi.exe?1005,1,help,daten_importieren_kunde
+} {
+    
+    if {$customer_p} {
+        set Satzart "CMXKND"
+    } else {
+        set Satzart "CMXLIF"
+    }
+
+    db_1row customer_info {
+        select *
+            from users_contact uc, persons pe, parties pa
+            where uc.user_id = pe.person_id
+            and pe.person_id = pa.party_id
+            and pe.person_id = :user_id
+    }
+
+    # Translation of the country code
+    switch $ha_country_code {
+        "uk" {set ha_country_code gb}
+        ""   {set ha_country_code de} ; # default country code germany
+    }
+
+    if {$email eq ""} {
+        set email "[parameter::get_from_package_key -package_key "acs-kernel" -parameter "HostAdministrator"]"
+    }
+    
+    set csv_line "$Satzart"
+    
+    if {[exists_and_not_null collmex_id]} {
+        append csv_line ";$collmex_id"
+    } else {
+        append csv_line ";"
+    }
+    
+    append csv_line ";1" ; # Firma Nr (internal)
+    append csv_line ";" ; # Anrede
+    append csv_line ";" ; # Title
+    append csv_line ";\"[im_csv_duplicate_double_quotes $first_names]\"" ; # Vorname
+    append csv_line ";\"[im_csv_duplicate_double_quotes $last_name]\"" ;# Name
+    append csv_line ";" ; # Firma
+    append csv_line ";\"[im_csv_duplicate_double_quotes $title]\"" ; # Abteilung
+    
+    append ha_line1 "\n $ha_line2"
+    append csv_line ";\"[im_csv_duplicate_double_quotes $ha_line1]\"" ; # Straße
+    append csv_line ";\"[im_csv_duplicate_double_quotes $ha_postal_code]\"" ; # PLZ
+    append csv_line ";\"[im_csv_duplicate_double_quotes $ha_city]\"" ; # Ort
+    append csv_line ";\"[im_csv_duplicate_double_quotes $note]\"" ; # Bemerkung
+    append csv_line ";0" ; # Inaktiv
+    append csv_line ";\"[im_csv_duplicate_double_quotes $ha_country_code]\"" ; # Land
+    append csv_line ";\"[im_csv_duplicate_double_quotes $home_phone]\"" ; # Telefon
+    append csv_line ";\"[im_csv_duplicate_double_quotes $fax]\"" ; # Telefax
+    append csv_line ";\"[im_csv_duplicate_double_quotes $email]\"" ; # E-Mail
+    append csv_line ";" ; # Kontonr
+    append csv_line ";" ; # Blz
+    append csv_line ";" ; # Iban
+    append csv_line ";" ; # Bic
+    append csv_line ";" ; # Bankname
+    append csv_line ";" ; # Steuernummer
+    append csv_line ";" ; # USt.IdNr
+    append csv_line ";6" ; # Zahlungsbedingung
+    
+    if {$customer_p} {
+        append csv_line ";" ; # Rabattgruppe
+    }
+    
+    append csv_line ";" ; # Lieferbedingung
+    append csv_line ";" ; # Lieferbedingung Zusatz
+    append csv_line ";1" ; # Ausgabemedium
+    append csv_line ";" ; # Kontoinhaber
+    append csv_line ";" ; # Adressgruppe
+    
+    if {$customer_p} {
+	    append csv_line ";" ; # eBay-Mitgliedsname
+        append csv_line ";" ; # Preisgruppe
+        append csv_line ";" ; # Währung (ISO-Codes)
+        append csv_line ";" ; # Vermittler
+        append csv_line ";" ; # Kostenstelle
+        append csv_line ";" ; # Wiedervorlage am
+        append csv_line ";" ; # Liefersperre
+        append csv_line ";" ; # Baudienstleister
+        append csv_line ";" ; # Lief-Nr. bei Kunde
+        append csv_line ";" ; # Ausgabesprache
+        append csv_line ";" ; # CC
+        append csv_line ";" ; # Telefon2
+    } else {
+        append csv_line ";" ; # Kundennummer beim Lieferanten
+        append csv_line ";" ; # Währung (ISO-Codes)
+        append csv_line ";" ; # Telefon2
+        append csv_line ";" ; # Ausgabesprache
+    }
+    
+    set response [intranet_collmex::http_post -csv_data $csv_line]
+    if {$response != "-1"} {
+        set response [split $response ";"]
+        if {[lindex $response 0] == "NEW_OBJECT_ID"} {
+	        ns_log Notice "New Customer:: [lindex $response 1]"
+            # This seems to be a new customer
+            if {$collmex_id eq ""} {
+                db_dml update_collmex_id "update users_contact set collmex_id = [lindex $response 1] where user_id = :user_id"
+                set return_message [lindex $response 1]
+            } else {
+                set return_message "Problem: Collmex ID exists for new contact $user_id :: $collmex_id :: new [lindex $response 1]"
+                acs_mail_lite::send -send_immediately -to_addr [ad_admin_owner] -from_addr [ad_admin_owner] -subject "Collmex ID already present in project-open" -body "$return_message"
+            }
+        }
+    }
+}
