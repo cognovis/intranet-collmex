@@ -354,15 +354,15 @@ ad_proc -public intranet_collmex::invoice_payment_get {
     
     set csv_line "INVOICE_PAYMENT_GET;1"
     if {$invoice_id ne ""} {
-	set invoice_nr [db_string invoice_nr "select invoice_nr from im_invoices where invoice_id = :invoice_id" -default ""]
-	append csv_line ";${invoice_nr}"
+        set invoice_nr [db_string invoice_nr "select invoice_nr from im_invoices where invoice_id = :invoice_id" -default ""]
+        append csv_line ";${invoice_nr}"
     } else {
-	append csv_line ";"
+        append csv_line ";"
     }
     if {$all_p} {
-	append csv_line ";"
+        append csv_line ";"
     } else {
-	append csv_line ";1"
+        append csv_line ";1"
     }
     append csv_line ";\"projop\"" ; # Systemname
     
@@ -372,28 +372,28 @@ ad_proc -public intranet_collmex::invoice_payment_get {
     ns_log Notice "Returned payments from Collmex: $lines"
     set return_html ""
     foreach line $lines {
-	# Find out if it actually is a payment line
-	set line_items [split $line ";"]
-	if {[lindex $line_items 0] eq "INVOICE_PAYMENT"} {
-	    set collmex_id  "[lindex $line_items 5]-[lindex $line_items 6]-[lindex $line_items 7]"
-	    set date  [lindex $line_items 2] ; # Datum
-	    set amount  [lindex $line_items 4] ; # Actually paid amount
-	    set invoice_nr [lindex $line_items 1]
-	    regsub -all {,} $amount {.} amount
-	    # Check if we have this id already for a payment
-	    if {[db_string payment_id "select payment_id from im_payments where collmex_id = :collmex_id" -default ""] ne ""} {
-		db_dml update "update im_payments set received_date = to_date(:date,'YYYYMMDD'), amount = :amount where collmex_id = :collmex_id"
-		append return_html "$invoice_nr <br> $amount :: $collmex_id"
-	    } else {
-		# Find the invoice_id
-		set invoice_id [db_string invoice_id "select invoice_id from im_invoices where invoice_nr = :invoice_nr" -default ""]
-		if {$invoice_id ne "" && $collmex_id ne "--"} {
-		    # Lets record the payment
-		    set payment_id [im_payment_create_payment -cost_id $invoice_id]
-		    db_dml update "update im_payments set received_date = to_date(:date,'YYYYMMDD'), amount = :amount, collmex_id = :collmex_id where payment_id = :payment_id"
-		}
-	    }
-	} 	    
+        # Find out if it actually is a payment line
+        set line_items [split $line ";"]
+        if {[lindex $line_items 0] eq "INVOICE_PAYMENT"} {
+            set collmex_id  "[lindex $line_items 5]-[lindex $line_items 6]-[lindex $line_items 7]"
+            set date  [lindex $line_items 2] ; # Datum
+            set amount  [lindex $line_items 4] ; # Actually paid amount
+            set invoice_nr [lindex $line_items 1]
+            regsub -all {,} $amount {.} amount
+            # Check if we have this id already for a payment
+            if {[db_string payment_id "select payment_id from im_payments where collmex_id = :collmex_id" -default ""] ne ""} {
+                db_dml update "update im_payments set received_date = to_date(:date,'YYYYMMDD'), amount = :amount where collmex_id = :collmex_id"
+                append return_html "$invoice_nr <br> $amount :: $collmex_id"
+            } else {
+                # Find the invoice_id
+                set invoice_id [db_string invoice_id "select invoice_id from im_invoices where invoice_nr = :invoice_nr" -default ""]
+                if {$invoice_id ne "" && $collmex_id ne "--"} {
+		            # Lets record the payment
+                    set payment_id [im_payment_create_payment -cost_id $invoice_id -actual_amount $amount]
+                    db_dml update "update im_payments set received_date = to_date(:date,'YYYYMMDD'), amount = :amount, collmex_id = :collmex_id where payment_id = :payment_id"
+                }
+            }
+        } 	    
     }
     return 1
 }
