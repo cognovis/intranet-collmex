@@ -105,14 +105,14 @@ ad_proc -public -callback im_invoice_before_delete -impl intranet-collmex_invoic
 } {
     
     if {[lsearch [im_sub_categories 3700] $type_id] >-1} {
-	# Customer Invoice
-	ns_log Notice "Deleting invoice in Collmex:: [intranet_collmex::update_customer_invoice -invoice_id $object_id -storno]"
-	return
+        # Customer Invoice
+        ns_log Notice "Deleting invoice in Collmex:: [intranet_collmex::update_customer_invoice -invoice_id $object_id -storno]"
+        return
     } 
     
     if {[lsearch [im_sub_categories 3704] $type_id] >-1} {
-	# Provider Bill
-	ns_log Notice "Deleting bill in Collmex:: [intranet_collmex::update_provider_bill -invoice_id $object_id -storno]"
-	return
+        # Provider Bill
+        ns_log Notice "Deleting bill in Collmex:: [intranet_collmex::update_provider_bill -invoice_id $object_id -storno]"
+        return
     }
 }
