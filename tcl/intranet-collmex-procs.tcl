@@ -87,6 +87,13 @@ ad_proc -public intranet_collmex::update_company {
 	set Satzart "CMXLIF"
     }
 
+    set bank_account_nr ""
+    set bank_routing_nr ""
+    set iban ""
+    set bic ""
+    set bank_name ""
+    set tax_number ""
+    set vat_number ""
     db_1row customer_info {
 	select *
         from im_offices o, im_companies c
@@ -266,85 +273,186 @@ ad_proc -public intranet_collmex::update_provider_bill {
 ad_proc -public intranet_collmex::update_customer_invoice {
     -invoice_id
     -storno:boolean
+    -line_items:boolean
 } {
     send the customer invoice to collmex
+    
+    @param invoice_id Invoice to be sent over to Collmex
+    @param storno Add this flag if you want to storno the invoice
+    @param line_items Add this flag if you want to transfer the individual lineitems. This only works with correctly maintained materials in the line items which link back to material groups that have a tax_id
 } {
+    
     # Get all the invoice information
     db_1row invoice_data {
-	select collmex_id,to_char(effective_date,'YYYYMMDD') as invoice_date, invoice_nr, 
-	  round(vat,0) as vat, round(amount,2) as netto, c.company_id, address_country_code, ca.aux_int2 as konto, cc.cost_center_code as kostenstelle
-	from im_invoices i, im_costs ci, im_companies c, im_offices o, im_categories ca, im_cost_centers cc
-	where c.company_id = ci.customer_id 
-	and c.main_office_id = o.office_id
-	and ci.cost_id = i.invoice_id 
-        and cc.cost_center_id = ci.cost_center_id
-        and ca.category_id = c.vat_type_id
-	and i.invoice_id = :invoice_id
+        select collmex_id,to_char(effective_date,'YYYYMMDD') as invoice_date, invoice_nr, 
+          round(vat,0) as vat, round(amount,2) as invoice_netto, c.company_id, address_country_code, ca.aux_int1 as customer_vat,
+          ca.aux_int2 as customer_konto, cc.cost_center_code as kostenstelle
+        from im_invoices i, im_costs ci, im_companies c, im_offices o, im_categories ca, im_cost_centers cc
+        where c.company_id = ci.customer_id 
+            and c.main_office_id = o.office_id
+            and ci.cost_id = i.invoice_id 
+            and cc.cost_center_id = ci.cost_center_id
+            and ca.category_id = c.vat_type_id
+            and i.invoice_id = :invoice_id
     }
 
-    regsub -all {\.} $netto {,} netto
-
-    set csv_line "CMXUMS"; # 1
     if {$collmex_id eq ""} {
-	set collmex_id [intranet_collmex::update_company -company_id $company_id -customer]
+        set collmex_id [intranet_collmex::update_company -company_id $company_id -customer]
     }
+
+    if {$line_items_p} {
+    
+        db_1row item_data {select round(sum(item_units*price_per_unit),2) as total_amount, array_to_string(array_agg(item_name), ', ') as items_text from im_invoice_items ii where ii.invoice_id = :invoice_id}
+        
+        if {$total_amount ne $invoice_netto} {
+            ns_log Error "Invoice amount for $invoice_id not equal sum of line items $total_amount != $invoice_netto"
+            ds_comment "Invoice amount for $invoice_id not equal sum of line items $total_amount != $invoice_netto"
+            return 0
+        }
+        set csv_line "" 
+        # Transfer one FI line item per invoice line
+        db_foreach line_item {
+            select round(item_units*price_per_unit,2) as line_item_netto, item_material_id, ct.aux_int1 as vat, ct.aux_int2 as line_item_konto, material_name
+            from im_categories cm, im_categories ct, im_invoice_items ii, im_materials im
+            where cm.aux_int2 = ct.category_id
+            and ii.item_material_id = im.material_id
+            and im.material_type_id = cm.category_id
+            and ii.invoice_id = :invoice_id 
+            order by ii.sort_order
+        } {
+            # Override line item vat if the customer is tax free.
+            if {$customer_vat eq 0} {
+                set vat 0
+                set line_item_konto $customer_konto
+            }
+            
+            regsub -all {\.} $line_item_netto {,} netto                        
+            regsub -all {\-} $netto {} netto                        
+
+            # Create one FI line item per sales order line item
+            if {$csv_line ne ""} {append csv_line "\n"}
+            append csv_line "CMXUMS"; # 1
+            append csv_line ";$collmex_id" ; # 2 Lieferantennummer
+            append csv_line ";1" ; # 3 Firma Nr
+            append csv_line ";$invoice_date" ; # 4 Rechnungsdatum
+            append csv_line ";$invoice_nr" ; # 5 Rechnungsnummer
+            
+            if {$vat eq 19} {
+                append csv_line ";\"[im_csv_duplicate_double_quotes $netto]\"" ; # 6 Nettobetrag voller Umsatzsteuersatz
+            } else {
+            	append csv_line ";"
+            }
+            append csv_line ";" ; # 7 Steuer zum vollen Umsatzsteuersatz
+            if {$vat eq 7} {
+                append csv_line ";\"[im_csv_duplicate_double_quotes $netto]\"" ;  # 8 Nettobetrag halber Umsatzsteuersatz
+            } else {
+            	append csv_line ";"
+            }
+            append csv_line ";" ; # 9 Steuer zum halben Umsatzsteuersatz
+            append csv_line ";" ; # 10 Umsätze Innergemeinschaftliche Lieferung
+            append csv_line ";" ; # 11 Umsätze Export
+            if {$vat eq 0} {
+                append csv_line ";$line_item_konto" ; # 12 Steuerfreie Erloese Konto
+                append csv_line ";\"[im_csv_duplicate_double_quotes $netto]\""; # Steuerfrei Betrag
+            } else {
+                append csv_line ";" ; # 12 Hat VAT => Nicht Steuerfrei
+                append csv_line ";" ; # 13 Hat VAT => Nicht Steuerfrei
+            }
+            append csv_line ";\"EUR\"" ; # 14Währung (ISO-Codes)
+            append csv_line ";" ; # 15 Gegenkonto
+            if {$line_item_netto >=0} {
+                append csv_line ";0" ; # 16 Rechnungsart
+            } else {
+                append csv_line ";1" ; # 16 Rechnungsart Gutschrift
+            }
+            append csv_line ";\"[im_csv_duplicate_double_quotes $items_text]\"" ; # 17 Belegtext
+            append csv_line ";6" ; # 18 Zahlungsbedingung
+            if {$vat eq 19} {
+            	append csv_line ";$line_item_konto" ; # 19 KontoNr voller Umsatzsteuersatz
+            } else {
+            	append csv_line ";" ; # 19 KontoNr voller Umsatzsteuersatz
+            }
+            if {$vat eq 7} {
+            	append csv_line ";$line_item_konto" ; # 20 KontoNr halber Umsatzsteuersatz
+            } else {
+            	append csv_line ";" ; # 20 KontoNr halber Umsatzsteuersatz
+            }
+            append csv_line ";" ; # 21 reserviert
+            append csv_line ";" ; # 22 reserviert
+            if {$storno_p} {
+                append csv_line ";1" ; # 23 Storno
+            } else {
+                append csv_line ";" ; # 23 Storno
+            }
+            append csv_line ";" ; # 24 Schlussrechnung
+            append csv_line ";" ; # 25 Erloesart
+            append csv_line ";\"projop\"" ; # 26 Systemname
+            append csv_line ";" ; # 27 Verrechnen mit Rechnugnsnummer fuer gutschrift
+            append csv_line ";\"$kostenstelle\"" ; # 28 Kostenstelle
+        }
+    
+    } else {
+
+
+        regsub -all {\.} $invoice_netto {,} netto
+
+        set csv_line "CMXUMS"; # 1
 	
-    append csv_line ";$collmex_id" ; # 2 Lieferantennummer
-    append csv_line ";1" ; # 3 Firma Nr
-    append csv_line ";$invoice_date" ; # 4 Rechnungsdatum
-    append csv_line ";$invoice_nr" ; # 5 Rechnungsnummer
+        append csv_line ";$collmex_id" ; # 2 Lieferantennummer
+        append csv_line ";1" ; # 3 Firma Nr
+        append csv_line ";$invoice_date" ; # 4 Rechnungsdatum
+        append csv_line ";$invoice_nr" ; # 5 Rechnungsnummer
 
-    if {$konto eq ""} {
-	set konto [parameter::get_from_package_key -package_key "intranet-collmex" -parameter "KontoInvoice"]
-    }
+        if {$customer_konto eq ""} {
+            set konto [parameter::get_from_package_key -package_key "intranet-collmex" -parameter "KontoInvoice"]
+        }
 
-    # Find if the provide is from germany and has vat.
-    if {$vat eq 19} {
-	append csv_line ";\"[im_csv_duplicate_double_quotes $netto]\"" ; # 6 Nettobetrag voller Umsatzsteuersatz
-    } else {
-	append csv_line ";"
-    }
+        # Find if the provide is from germany and has vat.
+        if {$vat eq 19} {
+            append csv_line ";\"[im_csv_duplicate_double_quotes $netto]\"" ; # 6 Nettobetrag voller Umsatzsteuersatz
+        } else {
+            append csv_line ";"
+        }
     
-    append csv_line ";" ; # 7 Steuer zum vollen Umsatzsteuersatz
-    append csv_line ";" ; # 8 Nettobetrag halber Umsatzsteuersatz
-    append csv_line ";" ; # 9 Steuer zum halben Umsatzsteuersatz
-    append csv_line ";" ; # 10 Umsätze Innergemeinschaftliche Lieferung
-    append csv_line ";" ; # 11 Umsätze Export
-    if {$vat eq 19} {
-	append csv_line ";" ; # 12 Hat VAT => Nicht Steuerfrei
-	append csv_line ";" ; # 13 Hat VAT => Nicht Steuerfrei
-    } else {
-	append csv_line ";$konto" ; # 12 Steuerfreie Erloese Konto
-	append csv_line ";\"[im_csv_duplicate_double_quotes $netto]\""; # Steuerfrei Betrag
+        append csv_line ";" ; # 7 Steuer zum vollen Umsatzsteuersatz
+        append csv_line ";" ; # 8 Nettobetrag halber Umsatzsteuersatz
+        append csv_line ";" ; # 9 Steuer zum halben Umsatzsteuersatz
+        append csv_line ";" ; # 10 Umsätze Innergemeinschaftliche Lieferung
+        append csv_line ";" ; # 11 Umsätze Export
+        if {$vat eq 19} {
+            append csv_line ";" ; # 12 Hat VAT => Nicht Steuerfrei
+            append csv_line ";" ; # 13 Hat VAT => Nicht Steuerfrei
+        } else {
+            append csv_line ";$customer_konto" ; # 12 Steuerfreie Erloese Konto
+            append csv_line ";\"[im_csv_duplicate_double_quotes $netto]\""; # Steuerfrei Betrag
+        }
+        append csv_line ";\"EUR\"" ; # 14Währung (ISO-Codes)
+        append csv_line ";" ; # 15 Gegenkonto
+        append csv_line ";0" ; # 16 Rechnungsart
+        append csv_line ";" ; # 17 Belegtext
+        append csv_line ";6" ; # 18 Zahlungsbedingung
+        if {$vat eq 19} {
+            append csv_line ";$customer_konto" ; # 19 KontoNr voller Umsatzsteuersatz
+        } else {
+            append csv_line ";"
+        }
+        append csv_line ";" ; # 20 KontoNr halber Umsatzsteuersatz
+        append csv_line ";" ; # 21 reserviert
+        append csv_line ";" ; # 22 reserviert
+        if {$storno_p} {
+            append csv_line ";1" ; # 23 Storno
+        } else {
+            append csv_line ";" ; # 23 Storno
+        }
+        append csv_line ";" ; # 24 Schlussrechnung
+        append csv_line ";" ; # 25 Erloesart
+        append csv_line ";\"projop\"" ; # 26 Systemname
+        append csv_line ";" ; # 27 Verrechnen mit Rechnugnsnummer fuer gutschrift
+        append csv_line ";\"$kostenstelle\"" ; # 28 Kostenstelle
     }
-    append csv_line ";\"EUR\"" ; # 14Währung (ISO-Codes)
-    append csv_line ";" ; # 15 Gegenkonto
-    append csv_line ";0" ; # 16 Rechnungsart
-    append csv_line ";" ; # 17 Belegtext
-    append csv_line ";6" ; # 18 Zahlungsbedingung
-    if {$vat eq 19} {
-	append csv_line ";$konto" ; # 19 KontoNr voller Umsatzsteuersatz
-    } else {
-	append csv_line ";"
-    }
-    append csv_line ";" ; # 20 KontoNr halber Umsatzsteuersatz
-    append csv_line ";" ; # 21 reserviert
-    append csv_line ";" ; # 22 reserviert
-    if {$storno_p} {
-	append csv_line ";1" ; # 23 Storno
-    } else {
-	append csv_line ";" ; # 23 Storno
-    }
-    append csv_line ";" ; # 24 Schlussrechnung
-    append csv_line ";" ; # 25 Erloesart
-    append csv_line ";\"projop\"" ; # 26 Systemname
-    append csv_line ";" ; # 27 Verrechnen mit Rechnugnsnummer fuer gutschrift
-    append csv_line ";\"$kostenstelle\"" ; # 28 Kostenstelle
-    
     set response [intranet_collmex::http_post -csv_data $csv_line]    
 }
-
-
+    
 ad_proc -public intranet_collmex::invoice_payment_get {
     {-invoice_id ""}
     -all:boolean
