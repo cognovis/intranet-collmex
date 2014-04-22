@@ -51,3 +51,31 @@ END;' language 'plpgsql';
 
 SELECT inline_0 ();
 DROP FUNCTION inline_0 ();
+
+-- Add the categories for the default payment days
+create or replace function inline_0 ()
+returns integer as $body$
+declare
+        v_category_id   integer;
+begin
+SELECT category_id into v_category_id from im_categories where category_type = 'Intranet Payment Term' limit 1;
+IF v_category_id IS NULL THEN
+    -- Create the collmex categories
+    perform im_category_new (80130, '30 days', 'Intranet Payment Term');
+    update im_categories set aux_int1 = 30, aux_int2=0 where category_id = 80130;
+    perform im_category_new (80160, '60 days', 'Intranet Payment Term');
+    update im_categories set aux_int1 = 60, aux_int2=8 where category_id = 80160;
+    perform im_category_new (80114, '14 days', 'Intranet Payment Term');
+    update im_categories set aux_int1 = 14, aux_int2=6 where category_id = 80114;
+    perform im_category_new (80114, '0 days', 'Intranet Payment Term');
+    update im_categories set aux_int1 = 0, aux_int2=1, aux_string1='immediately' where category_id = 80100;
+ELSE
+    update im_categories set aux_int1 = 0, aux_int2=1, aux_string1='immediately' where category_type = 'Intranet Payment Term' and aux_int1 = 0;
+    update im_categories set aux_int1 = 30, aux_int2=1, aux_string1='within 30 days' where category_type = 'Intranet Payment Term' and aux_int1 = 30;
+    update im_categories set aux_int1 = 60, aux_int2=1, aux_string1='within 60 days' where category_type = 'Intranet Payment Term' and aux_int1 = 60;
+    update im_categories set aux_int1 = 14, aux_int2=1, aux_string1='within 14 days' where category_type = 'Intranet Payment Term' and aux_int1 = 14;
+END IF;
+RETURN 0;
+end;$body$ language 'plpgsql';
+select inline_0 ();
+drop function inline_0 ();

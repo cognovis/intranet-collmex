@@ -294,15 +294,20 @@ ad_proc -public intranet_collmex::update_customer_invoice {
             and cc.cost_center_id = ci.cost_center_id
             and ca.category_id = c.vat_type_id
             and i.invoice_id = :invoice_id
+            order by sort_order
     }
 
     if {$collmex_id eq ""} {
         set collmex_id [intranet_collmex::update_company -company_id $company_id -customer]
     }
 
+    # In case we did not get line_items as a boolean, check if the invoice if of vat_type for line items.
+    if {$line_items_p == 0} {set line_items_p [db_string line_item_p "select 1 from im_costs where vat_type_id = 42021 and cost_id = :invoice_id" -default 0]}
+
     if {$line_items_p} {
     
-        db_1row item_data {select round(sum(item_units*price_per_unit),2) as total_amount, array_to_string(array_agg(item_name), ', ') as items_text from im_invoice_items ii where ii.invoice_id = :invoice_id}
+        db_1row item_data {select round(sum(item_units*price_per_unit),2) as total_amount, array_to_string(array_agg(item_name), ', ') as items_text 
+            from (select item_units,price_per_unit,item_name from im_invoice_items ii where ii.invoice_id = :invoice_id order by sort_order) as items}
         
         if {$total_amount ne $invoice_netto} {
             ns_log Error "Invoice amount for $invoice_id not equal sum of line items $total_amount != $invoice_netto"
