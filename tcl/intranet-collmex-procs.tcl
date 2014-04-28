@@ -286,13 +286,14 @@ ad_proc -public intranet_collmex::update_customer_invoice {
     db_1row invoice_data {
         select collmex_id,to_char(effective_date,'YYYYMMDD') as invoice_date, invoice_nr, 
           round(vat,0) as vat, round(amount,2) as invoice_netto, c.company_id, address_country_code, ca.aux_int1 as customer_vat,
-          ca.aux_int2 as customer_konto, cc.cost_center_code as kostenstelle
-        from im_invoices i, im_costs ci, im_companies c, im_offices o, im_categories ca, im_cost_centers cc
+          ca.aux_int2 as customer_konto, cc.cost_center_code as kostenstelle, cb.aux_int2 as collmex_payment_term_id
+        from im_invoices i, im_costs ci, im_companies c, im_offices o, im_categories ca, im_cost_centers cc, im_categories cb
         where c.company_id = ci.customer_id 
             and c.main_office_id = o.office_id
             and ci.cost_id = i.invoice_id 
             and cc.cost_center_id = ci.cost_center_id
             and ca.category_id = c.vat_type_id
+            and cb.category_id = ci.payment_term_id
             and i.invoice_id = :invoice_id
             order by sort_order
     }
@@ -371,7 +372,7 @@ ad_proc -public intranet_collmex::update_customer_invoice {
                 append csv_line ";1" ; # 16 Rechnungsart Gutschrift
             }
             append csv_line ";\"[im_csv_duplicate_double_quotes $items_text]\"" ; # 17 Belegtext
-            append csv_line ";6" ; # 18 Zahlungsbedingung
+            append csv_line ";$collmex_payment_term_id" ; # 18 Zahlungsbedingung
             if {$vat eq 19} {
             	append csv_line ";$line_item_konto" ; # 19 KontoNr voller Umsatzsteuersatz
             } else {
@@ -435,7 +436,7 @@ ad_proc -public intranet_collmex::update_customer_invoice {
         append csv_line ";" ; # 15 Gegenkonto
         append csv_line ";0" ; # 16 Rechnungsart
         append csv_line ";" ; # 17 Belegtext
-        append csv_line ";6" ; # 18 Zahlungsbedingung
+        append csv_line ";$collmex_payment_term_id" ; # 18 Zahlungsbedingung
         if {$vat eq 19} {
             append csv_line ";$customer_konto" ; # 19 KontoNr voller Umsatzsteuersatz
         } else {
