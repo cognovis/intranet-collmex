@@ -37,6 +37,7 @@ ad_proc -public intranet_collmex::http_post {
     set customer_nr [parameter::get_from_package_key -package_key intranet-collmex -parameter CollmexKundenNr]
     set login [parameter::get_from_package_key -package_key intranet-collmex -parameter Login]
     set password  [parameter::get_from_package_key -package_key intranet-collmex -parameter Password]
+    set active_p [parameter::get_from_package_key -package_key intranet-collmex -parameter ActiveP]
 
     set data "LOGIN;$login;$password\n${csv_data}\n"
     set token [::http::geturl https://www.collmex.de/cgi-bin/cgi.exe?${customer_nr},0,data_exchange \
@@ -44,31 +45,34 @@ ad_proc -public intranet_collmex::http_post {
 		   -query $data]
 
     ns_log Notice "Collmex Query: $data"
-    set response [::http::data $token]
-    ns_log Notice "Collmex:: $response"
-    set meldungstyp [lindex [split $response ";"] 1]
-    switch $meldungstyp {
-	S {
-	    return $response
-	}
-	W {
-	    # Warning Mail
-	    acs_mail_lite::send -send_immediately -to_addr [ad_admin_owner] -from_addr [ad_admin_owner] -subject "Collmex Warning" -body "There was a warning in collmex, but the call was successful. <p /> \
-<br />Called: $csv_data \
-<br />Reponse $response" -mime_type "text/html"
-	    return $response
-	}
-	E {
-	    # Error Mail
-	    ns_log Error "Error in Collmex: $response"
-	    acs_mail_lite::send -send_immediately -to_addr [ad_admin_owner] -from_addr [ad_admin_owner] -subject "Collmex Error" -body "There was a error in collmex, data is not transferred.<p /> \
-<br />Called: $csv_data \
-<br />Reponse $response" -mime_type "text/html"
-	    return "-1"
-	}
-	default {
-	    return $response
-	}
+    
+    if {$active_p} {
+        set response [::http::data $token]
+        ns_log Notice "Collmex:: $response"
+        set meldungstyp [lindex [split $response ";"] 1]
+        switch $meldungstyp {
+            S {
+                return $response
+            }
+            W {
+                # Warning Mail
+                acs_mail_lite::send -send_immediately -to_addr [ad_admin_owner] -from_addr [ad_admin_owner] -subject "Collmex Warning" -body "There was a warning in collmex, but the call was successful. <p /> \
+                <br />Called: $csv_data \
+                <br />Reponse $response" -mime_type "text/html"
+                return $response
+            }
+	        E {
+	            # Error Mail
+	            ns_log Error "Error in Collmex: $response"
+	            acs_mail_lite::send -send_immediately -to_addr [ad_admin_owner] -from_addr [ad_admin_owner] -subject "Collmex Error" -body "There was a error in collmex, data is not transferred.<p /> \
+                <br />Called: $csv_data \
+                <br />Reponse $response" -mime_type "text/html"
+                return "-1"
+            }
+            default {
+                return $response
+            }
+        }
     }
 }
 
