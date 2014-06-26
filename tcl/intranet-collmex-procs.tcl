@@ -113,10 +113,13 @@ ad_proc -public intranet_collmex::update_company {
 	""   {set address_country_code de} ; # default country code germany
     }
 
-    if {$email eq ""} {
-	set email "[parameter::get_from_package_key -package_key "acs-kernel" -parameter "HostAdministrator"]"
+    if {$email eq "" && $address_city eq ""} {
+	acs_mail_lite::send -send_immediately -to_addr [ad_admin_owner] -from_addr [ad_admin_owner] -subject "Company without email" \
+	    -body "Company $company_name has no E-Mail or Address, can't create"
+	return 0
+	ad_script_abort
     }
-    
+
     set csv_line "$Satzart"
     
     if {[exists_and_not_null collmex_id]} {
