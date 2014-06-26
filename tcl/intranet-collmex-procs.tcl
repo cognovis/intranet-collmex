@@ -306,7 +306,7 @@ ad_proc -public intranet_collmex::update_customer_invoice {
 
     if {$line_items_p} {
     
-        db_1row item_data {select round(sum(item_units*price_per_unit),3) as total_amount, array_to_string(array_agg(item_name), ', ') as items_text 
+        db_1row item_data {select round(sum(item_units*price_per_unit),2) as total_amount, array_to_string(array_agg(item_name), ', ') as items_text 
             from (select item_units,price_per_unit,item_name from im_invoice_items ii where ii.invoice_id = :invoice_id order by sort_order) as items}
         
         if {$total_amount ne $invoice_netto} {
