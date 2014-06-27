@@ -288,10 +288,11 @@ ad_proc -public intranet_collmex::update_customer_invoice {
     @param storno Add this flag if you want to storno the invoice
     @param line_items Add this flag if you want to transfer the individual lineitems. This only works with correctly maintained materials in the line items which link back to material groups that have a tax_id
 } {
+    set corr_invoice_nr ""
     
     # Get all the invoice information
     db_1row invoice_data {
-        select collmex_id,to_char(effective_date,'YYYYMMDD') as invoice_date, invoice_nr, 
+        select collmex_id,to_char(effective_date,'YYYYMMDD') as invoice_date, invoice_nr, cost_type_id,
           round(vat,0) as vat, round(amount,2) as invoice_netto, c.company_id, address_country_code, ca.aux_int1 as customer_vat,
           ca.aux_int2 as customer_konto, cc.cost_center_code as kostenstelle, cb.aux_int2 as collmex_payment_term_id
         from im_invoices i, im_costs ci, im_companies c, im_offices o, im_categories ca, im_cost_centers cc, im_categories cb
@@ -311,6 +312,22 @@ ad_proc -public intranet_collmex::update_customer_invoice {
     # In case we did not get line_items as a boolean, check if the invoice if of vat_type for line items.
     if {$line_items_p == 0} {set line_items_p [db_string line_item_p "select 1 from im_costs where vat_type_id = 42021 and cost_id = :invoice_id" -default 0]}
 
+    # In case this is a correction invoice, get the linked invoice
+    if {$cost_type_id == [im_cost_type_correction_invoice]} {
+        set linked_invoice_ids [relation::get_objects -object_id_two $invoice_id -rel_type "im_invoice_invoice_rel"]
+        if {$linked_invoice_ids ne ""} {
+            db_foreach linked_list "select cost_type_id as linked_cost_type_id,invoice_nr as linked_invoice_nr 
+                from im_costs, im_invoices 
+                where cost_id in ([template::util::tcl_to_sql_list $linked_invoice_ids])
+                and cost_id = invoice_id
+            " {
+                if {$linked_cost_type_id == [im_cost_type_invoice]} {
+                    set corr_invoice_nr $linked_invoice_nr
+                }
+            }
+        }
+    }
+    
     if {$line_items_p} {
     
         db_1row item_data {select round(sum(item_units*price_per_unit),2) as total_amount, array_to_string(array_agg(item_name), ', ') as items_text 
@@ -324,13 +341,13 @@ ad_proc -public intranet_collmex::update_customer_invoice {
         set csv_line "" 
         # Transfer one FI line item per invoice line
         db_foreach line_item {
-            select round(item_units*price_per_unit,2) as line_item_netto, item_material_id, ct.aux_int1 as vat, ct.aux_int2 as line_item_konto, material_name
+            select sum(round(item_units*price_per_unit,2)) as line_item_netto, ct.aux_int1 as vat, ct.aux_int2 as line_item_konto
             from im_categories cm, im_categories ct, im_invoice_items ii, im_materials im
             where cm.aux_int2 = ct.category_id
             and ii.item_material_id = im.material_id
             and im.material_type_id = cm.category_id
             and ii.invoice_id = :invoice_id 
-            order by ii.sort_order
+            group by ct.aux_int1,ct.aux_int2
         } {
             # Override line item vat if the customer is tax free.
             if {$customer_vat eq 0} {
@@ -399,7 +416,7 @@ ad_proc -public intranet_collmex::update_customer_invoice {
             append csv_line ";" ; # 24 Schlussrechnung
             append csv_line ";" ; # 25 Erloesart
             append csv_line ";\"projop\"" ; # 26 Systemname
-            append csv_line ";" ; # 27 Verrechnen mit Rechnugnsnummer fuer gutschrift
+            append csv_line ";\"$corr_invoice_nr\"" ; # 27 Verrechnen mit Rechnugnsnummer fuer gutschrift
             append csv_line ";\"$kostenstelle\"" ; # 28 Kostenstelle
         }
     
@@ -459,7 +476,7 @@ ad_proc -public intranet_collmex::update_customer_invoice {
         append csv_line ";" ; # 24 Schlussrechnung
         append csv_line ";" ; # 25 Erloesart
         append csv_line ";\"projop\"" ; # 26 Systemname
-        append csv_line ";" ; # 27 Verrechnen mit Rechnugnsnummer fuer gutschrift
+        append csv_line ";\"$corr_invoice_nr\"" ; # 27 Verrechnen mit Rechnugnsnummer fuer gutschrift
         append csv_line ";\"$kostenstelle\"" ; # 28 Kostenstelle
     }
     set response [intranet_collmex::http_post -csv_data $csv_line]    

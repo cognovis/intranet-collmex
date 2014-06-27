@@ -34,9 +34,9 @@ ad_proc -public -callback im_company_after_update -impl intranet-collmex_update_
 } {
     # Find out if this is a customer
     if {[lsearch [im_category_parents $type_id] 57]>=0 || $type_id eq 57} {
-	ns_log Notice "Updating Collmex: [intranet_collmex::update_company -company_id $object_id -customer]"
+        ns_log Notice "Updating Collmex: [intranet_collmex::update_company -company_id $object_id -customer]"
     } else {
-	ns_log Notice "Updating Collmex: [intranet_collmex::update_company -company_id $object_id]"
+        ns_log Notice "Updating Collmex: [intranet_collmex::update_company -company_id $object_id]"
     }
 }
 
@@ -62,7 +62,7 @@ ad_proc -public -callback im_invoice_after_create -impl intranet-collmex_invoice
 } {
     This is the complex handle all types of invoice changes function for collmex
 } {
-    if {[lsearch [im_sub_categories 3700] $type_id] >-1 || $type_id eq 3700} {
+    if {[lsearch [im_sub_categories 3700] $type_id] >-1 || $type_id eq 3700 || [lsearch [im_sub_categories 3725] $type_id] >-1 || $type_id eq 3725} {
         # Customer Invoice                                                                                                                   
         ns_log Notice "Creating invoice in Collmex:: [intranet_collmex::update_customer_invoice -line_items -invoice_id $object_id]"
         return
@@ -83,15 +83,15 @@ ad_proc -public -callback im_invoice_after_update -impl intranet-collmex_invoice
     This is the complex handle all types of invoice changes function for collmex
 } {
 
-    if {[lsearch [im_sub_categories 3700] $type_id] >-1} {
-	# Customer Invoice
-	ns_log Notice "Creating invoice in Collmex:: [intranet_collmex::update_customer_invoice -line_items -invoice_id $object_id]"
-	return
-    } 
+    if {[lsearch [im_sub_categories 3700] $type_id] >-1 || $type_id eq 3700 || [lsearch [im_sub_categories 3725] $type_id] >-1 || $type_id eq 3725} {
+        # Customer Invoice                                                                                                                   
+        ns_log Notice "Creating invoice in Collmex:: [intranet_collmex::update_customer_invoice -line_items -invoice_id $object_id]"
+        return
+    }
     
-    if {[lsearch [im_sub_categories 3704] $type_id] >-1} {
-	# Provider Bill
-	ns_log Notice "Creating bill in Collmex:: [intranet_collmex::update_provider_bill -invoice_id $object_id]"
+    if {[lsearch [im_sub_categories 3704] $type_id] >-1 || $type_id eq 3704} {
+        # Provider Bill                                                                                                                      
+        ns_log Notice "Creating bill in Collmex:: [intranet_collmex::update_provider_bill -invoice_id $object_id]"
 	return
     }
 }
