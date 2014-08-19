@@ -329,13 +329,12 @@ ad_proc -public intranet_collmex::update_customer_invoice {
     }
     
     if {$line_items_p} {
-    
+	ns_log Notice "Updating Collmex invoice for $invoice_id line items"
         db_1row item_data {select round(sum(item_units*price_per_unit),2) as total_amount, array_to_string(array_agg(item_name), ', ') as items_text 
             from (select item_units,price_per_unit,item_name from im_invoice_items ii where ii.invoice_id = :invoice_id order by sort_order) as items}
         
         if {$total_amount ne $invoice_netto} {
             ns_log Error "Invoice amount for $invoice_id not equal sum of line items $total_amount != $invoice_netto"
-            ds_comment "Invoice amount for $invoice_id not equal sum of line items $total_amount != $invoice_netto"
             return 0
         }
         set csv_line "" 
@@ -421,7 +420,7 @@ ad_proc -public intranet_collmex::update_customer_invoice {
         }
     
     } else {
-
+	ns_log Notice "Updating Collmex invoice for $invoice_id without line items"
 
         regsub -all {\.} $invoice_netto {,} netto
 
