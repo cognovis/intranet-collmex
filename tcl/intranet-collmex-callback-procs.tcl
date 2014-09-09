@@ -64,7 +64,7 @@ ad_proc -public -callback im_invoice_after_create -impl intranet-collmex_invoice
 } {
     if {[lsearch [im_sub_categories 3700] $type_id] >-1 || $type_id eq 3700 || [lsearch [im_sub_categories 3725] $type_id] >-1 || $type_id eq 3725} {
         # Customer Invoice                                                                                                                   
-        ns_log Notice "Creating invoice in Collmex:: [intranet_collmex::update_customer_invoice -line_items -invoice_id $object_id]"
+        ns_log Notice "Creating invoice in Collmex:: [intranet_collmex::update_customer_invoice -invoice_id $object_id]"
         return
     }
 
@@ -85,7 +85,7 @@ ad_proc -public -callback im_invoice_after_update -impl intranet-collmex_invoice
 
     if {[lsearch [im_sub_categories 3700] $type_id] >-1 || $type_id eq 3700 || [lsearch [im_sub_categories 3725] $type_id] >-1 || $type_id eq 3725} {
         # Customer Invoice                                                                                                                   
-        ns_log Notice "Creating invoice in Collmex:: [intranet_collmex::update_customer_invoice -line_items -invoice_id $object_id]"
+        ns_log Notice "Creating invoice in Collmex:: [intranet_collmex::update_customer_invoice -invoice_id $object_id]"
         return
     }
     
@@ -106,7 +106,7 @@ ad_proc -public -callback im_invoice_before_delete -impl intranet-collmex_invoic
     
     if {[lsearch [im_sub_categories 3700] $type_id] >-1} {
         # Customer Invoice
-        ns_log Notice "Deleting invoice in Collmex:: [intranet_collmex::update_customer_invoice -line_items -invoice_id $object_id -storno]"
+        ns_log Notice "Deleting invoice in Collmex:: [intranet_collmex::update_customer_invoice -invoice_id $object_id -storno]"
         return
     } 
     
