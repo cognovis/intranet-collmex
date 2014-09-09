@@ -316,12 +316,12 @@ ad_proc -public intranet_collmex::update_customer_invoice {
     if {$cost_type_id == [im_cost_type_correction_invoice]} {
         set linked_invoice_ids [relation::get_objects -object_id_two $invoice_id -rel_type "im_invoice_invoice_rel"]
         if {$linked_invoice_ids ne ""} {
-            db_foreach linked_list "select cost_type_id as linked_cost_type_id,invoice_nr as linked_invoice_nr 
+            db_foreach linked_list "select cost_type_id as linked_cost_type_id,cost_status_id as linked_cost_status_id, invoice_nr as linked_invoice_nr 
                 from im_costs, im_invoices 
                 where cost_id in ([template::util::tcl_to_sql_list $linked_invoice_ids])
                 and cost_id = invoice_id
             " {
-                if {$linked_cost_type_id == [im_cost_type_invoice]} {
+                if {$linked_cost_type_id == [im_cost_type_invoice] && $linked_cost_status_id != [im_cost_status_paid]} {
                     set corr_invoice_nr $linked_invoice_nr
                 }
             }
@@ -333,11 +333,11 @@ ad_proc -public intranet_collmex::update_customer_invoice {
         db_1row item_data {select round(sum(item_units*price_per_unit),2) as total_amount, array_to_string(array_agg(item_name), ', ') as items_text 
             from (select item_units,price_per_unit,item_name from im_invoice_items ii where ii.invoice_id = :invoice_id order by sort_order) as items}
         
-        if {$total_amount ne $invoice_netto} {
-            ns_log Error "Invoice amount for $invoice_id not equal sum of line items $total_amount != $invoice_netto"
-            ds_comment "Invoice amount for $invoice_id not equal sum of line items $total_amount != $invoice_netto"
-            return 0
-        }
+#        if {$total_amount ne $invoice_netto} {
+#            ns_log Error "Invoice amount for $invoice_id not equal sum of line items $total_amount != $invoice_netto"
+#            ds_comment "Invoice amount for $invoice_id not equal sum of line items $total_amount != $invoice_netto"
+#            return 0
+#        }
         set csv_line "" 
         # Transfer one FI line item per invoice line
         db_foreach line_item {
@@ -479,6 +479,7 @@ ad_proc -public intranet_collmex::update_customer_invoice {
         append csv_line ";\"$corr_invoice_nr\"" ; # 27 Verrechnen mit Rechnugnsnummer fuer gutschrift
         append csv_line ";\"$kostenstelle\"" ; # 28 Kostenstelle
     }
+    ns_log Notice "$csv_line"
     set response [intranet_collmex::http_post -csv_data $csv_line]    
 }
     
