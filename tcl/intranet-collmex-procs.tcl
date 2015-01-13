@@ -61,13 +61,19 @@ ad_proc -public intranet_collmex::http_post {
                 <br />Reponse $response" -mime_type "text/html"
                 return $response
             }
-	        E {
-	            # Error Mail
+	    E {
+		if {[string match "INVOICE_PAYMENT_GET*" $csv_data]} {
+		    # It is not a critical issue if we can't get the payments, therefore we only
+		    # log the issue as a notice
+		    ns_log Notice "Error in Collmex: $response when calling $csv_data"
+		} else {
+		    # Error Mail
 	            ns_log Error "Error in Collmex: $response"
 	            acs_mail_lite::send -send_immediately -to_addr [ad_admin_owner] -from_addr [ad_admin_owner] -subject "Collmex Error" -body "There was a error in collmex, data is not transferred.<p /> \
                 <br />Called: $csv_data \
                 <br />Reponse $response" -mime_type "text/html"
-                return "-1"
+		    return "-1"
+		}
             }
             default {
                 return $response
