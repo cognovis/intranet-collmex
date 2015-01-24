@@ -40,16 +40,30 @@ ad_proc -public intranet_collmex::http_post {
     set active_p [parameter::get_from_package_key -package_key intranet-collmex -parameter ActiveP]
 
     set data "LOGIN;$login;$password\n${csv_data}\n"
-    set token [::http::geturl https://www.collmex.de/cgi-bin/cgi.exe?${customer_nr},0,data_exchange \
-		     -type "text/csv" \
-		   -query $data]
 
-    ns_log Notice "Collmex Query: $data"
-    
+
+    # Handle errors in the http connection    
+    set error_p [catch {set token [::http::geturl https://www.collmex.de/cgi-bin/cgi.exe?${customer_nr},0,data_exchange \
+				       -type "text/csv" \
+				       -query $data]} errmsg]
+    if {[::http::ncode $token] ne "200"} {
+	set error_p 1
+	set errmsg [::http::code $token]
+    }
+
     if {$active_p} {
         set response [::http::data $token]
+	ns_log Notice "Collmex Query: $data"
         ns_log Notice "Collmex:: $response"
+
         set meldungstyp [lindex [split $response ";"] 1]
+
+	# Make sure even an http error is treated as a regular error.
+	if {$error_p} {
+	    set meldungstype "E"
+	    set response $errmsg
+	}
+
         switch $meldungstyp {
             S {
                 return $response
