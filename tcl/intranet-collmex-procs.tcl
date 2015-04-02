@@ -547,9 +547,14 @@ ad_proc -public intranet_collmex::invoice_payment_get {
                 # Find the invoice_id
                 set invoice_id [db_string invoice_id "select invoice_id from im_invoices where invoice_nr = :invoice_nr" -default ""]
                 if {$invoice_id ne "" && $collmex_id ne "--"} {
-		            # Lets record the payment
-                    set payment_id [im_payment_create_payment -cost_id $invoice_id -actual_amount $amount]
-                    db_dml update "update im_payments set received_date = to_date(:date,'YYYYMMDD'), amount = :amount, collmex_id = :collmex_id where payment_id = :payment_id"
+		    # Check if we received the payment already
+		    set payment_id [db_string payment_id "select payment_id from im_payments where cost_id = :invoice_id and amount = :amount and received_date = to_date(:date,'YYYYMMDD')" -default ""]
+		    
+		    # Lets record the payment
+		    if {$payment_id eq ""} {
+			set payment_id [im_payment_create_payment -cost_id $invoice_id -actual_amount $amount]
+			db_dml update "update im_payments set received_date = to_date(:date,'YYYYMMDD'), amount = :amount, collmex_id = :collmex_id where payment_id = :payment_id"
+		    }
                 }
             }
         } 	    
