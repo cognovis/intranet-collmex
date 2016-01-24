@@ -342,13 +342,13 @@ ad_proc -public intranet_collmex::update_customer_invoice {
                 and cost_id = invoice_id
             " {
                 if {$linked_cost_type_id == [im_cost_type_invoice] && $linked_cost_status_id != [im_cost_status_paid]} {
-		    ns_log Notice "Checking for amount $linked_amount :: $amount :: $paid_amount"
-		    # Linked amount = Old Invoice. Old Invoice - Paid amount needs to be higher then the invers
-		    # of the correction invoice. So the remaining "due" is larger or equal to the correction invoice
-		    if {[expr {$linked_amount - $paid_amount}] >= [expr {$amount * -1}]} {
-			# The correction invoice is smaller, therefore we can even it out
-			set corr_invoice_nr $linked_invoice_nr
-		    }
+		           ns_log Notice "Checking for amount for correction invoice $linked_amount :: $amount :: $paid_amount"
+        		    # Linked amount = Old Invoice. Old Invoice - Paid amount needs to be higher then the invers
+        		    # of the correction invoice. So the remaining "due" is larger or equal to the correction invoice
+        		    if {[expr {$linked_amount - $paid_amount}] >= [expr {$amount * -1}]} {
+            			# The correction invoice is smaller, therefore we can even it out
+            			set corr_invoice_nr $linked_invoice_nr
+        		    }
                 }
             }
         }
