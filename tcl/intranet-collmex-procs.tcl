@@ -314,7 +314,7 @@ ad_proc -public intranet_collmex::update_customer_invoice {
     db_1row invoice_data {
         select collmex_id,to_char(effective_date,'YYYYMMDD') as invoice_date, invoice_nr, cost_type_id,
           round(vat,0) as vat, round(amount,2) as invoice_netto, c.company_id, address_country_code, ca.aux_int1 as customer_vat,
-          ca.aux_int2 as customer_konto, cc.cost_center_code as kostenstelle, cb.aux_int2 as collmex_payment_term_id
+          ca.aux_int2 as customer_konto, cc.cost_center_code as kostenstelle, cb.aux_int2 as collmex_payment_term_id, amount
         from im_invoices i, im_costs ci, im_companies c, im_offices o, im_categories ca, im_cost_centers cc, im_categories cb
         where c.company_id = ci.customer_id 
             and c.main_office_id = o.office_id
@@ -336,13 +336,19 @@ ad_proc -public intranet_collmex::update_customer_invoice {
     if {$cost_type_id == [im_cost_type_correction_invoice]} {
         set linked_invoice_ids [relation::get_objects -object_id_two $invoice_id -rel_type "im_invoice_invoice_rel"]
         if {$linked_invoice_ids ne ""} {
-            db_foreach linked_list "select cost_type_id as linked_cost_type_id,cost_status_id as linked_cost_status_id, invoice_nr as linked_invoice_nr 
-                from im_costs, im_invoices 
+            db_foreach linked_list "select c.amount as linked_amount, cost_type_id as linked_cost_type_id,cost_status_id as linked_cost_status_id, invoice_nr as linked_invoice_nr, coalesce((select sum(p.amount) from im_payments p where p.cost_id = c.cost_id),0) as paid_amount
+                from im_costs c, im_invoices i 
                 where cost_id in ([template::util::tcl_to_sql_list $linked_invoice_ids])
                 and cost_id = invoice_id
             " {
                 if {$linked_cost_type_id == [im_cost_type_invoice] && $linked_cost_status_id != [im_cost_status_paid]} {
-                    set corr_invoice_nr $linked_invoice_nr
+		    ns_log Notice "Checking for amount $linked_amount :: $amount :: $paid_amount"
+		    # Linked amount = Old Invoice. Old Invoice - Paid amount needs to be higher then the invers
+		    # of the correction invoice. So the remaining "due" is larger or equal to the correction invoice
+		    if {[expr {$linked_amount - $paid_amount}] >= [expr {$amount * -1}]} {
+			# The correction invoice is smaller, therefore we can even it out
+			set corr_invoice_nr $linked_invoice_nr
+		    }
                 }
             }
         }
